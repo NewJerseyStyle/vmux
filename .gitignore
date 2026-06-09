@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+
+# uv
+uv.lock
+
+# local config (ship config.example.yaml instead) — anchored to repo root so it
+# doesn't accidentally match e.g. .github/ISSUE_TEMPLATE/config.yml
+/config.yaml
+/config.yml
+vmux-settings.json
+
+# OS
+.DS_Store
