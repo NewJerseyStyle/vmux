@@ -6,6 +6,7 @@ import argparse
 import sys
 
 from . import __version__, config, tmux
+from .peer import random_peer_id
 from .server import create_app
 
 
@@ -20,6 +21,9 @@ def main(argv=None) -> int:
     parser.add_argument("--token", help="override bearer token")
     parser.add_argument("--include-shells", action="store_true",
                         help="also show plain idle shells, not just agents")
+    parser.add_argument("--peer-id", metavar="ID",
+                        help="enable WebRTC remote access; omit to auto-generate an ID "
+                             "(requires pip install 'vmux[peer]')")
     parser.add_argument("--version", action="version", version="vmux " + __version__)
     args = parser.parse_args(argv)
 
@@ -37,6 +41,9 @@ def main(argv=None) -> int:
         cfg.token = args.token
     if args.include_shells:
         cfg.include_shells = True
+    if args.peer_id is not None:
+        # empty string → auto-generate; explicit value → use as-is
+        cfg.peer_id = args.peer_id.strip() or random_peer_id()
     cfg.validate()
 
     if not tmux.list_panes():
@@ -52,6 +59,8 @@ def main(argv=None) -> int:
         __version__, scheme_host, cfg.port,
         "token set" if cfg.token else "no token, localhost only",
     ))
+    if cfg.peer_id:
+        print("vmux peer  -> %s  (enter this ID in the vmux PWA to connect remotely)" % cfg.peer_id)
     uvicorn.run(app, host=cfg.host, port=cfg.port, log_level="warning")
     return 0
 

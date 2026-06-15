@@ -253,6 +253,14 @@
   .gate-input:focus { border-color:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 20%,transparent); }
   .gate-btn { width:100%; padding:12px; font-size:15px; }
 
+  /* peer connect screen */
+  .peer-status { font-size:13px; color:var(--label-3); margin-bottom:14px; min-height:18px; }
+  .peer-status.ok { color:var(--green); }
+  .peer-status.err { color:var(--red); }
+  .peer-id-display { font:13px/1.4 "SF Mono",ui-monospace,monospace; background:var(--fill);
+    border-radius:8px; padding:8px 12px; margin-bottom:12px; word-break:break-all;
+    color:var(--label-2); text-align:center; }
+
   /* preference escape-hatches */
   .no-glass .glass { -webkit-backdrop-filter:none; backdrop-filter:none; background:var(--bg-elevated);
     box-shadow:0 1px 3px rgba(0,0,0,.12), inset 0 0 0 .5px var(--separator); }
@@ -329,6 +337,7 @@
 <script src="/vendor/react.production.min.js"></script>
 <script src="/vendor/react-dom.production.min.js"></script>
 <script src="/vendor/htm.umd.js"></script>
+<script src="/vendor/peerjs.min.js"></script>
 <script>
 const { useState, useEffect, useRef, useMemo } = React;
 const F = React.Fragment;
@@ -355,12 +364,125 @@ applyPrefs(PREFS);
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", ()=>{ if(PREFS.theme==="auto") applyPrefs(PREFS); });
 function usePrefs(){ const [,f]=useState(0); useEffect(()=>{ const fn=()=>f(x=>x+1); prefsSubs.add(fn); return ()=>prefsSubs.delete(fn); },[]); return PREFS; }
 
+// ---- peer transport (WebRTC DataChannel, optional) ----
+// When PEER_ID is set the app routes all API calls and state pushes through a
+// PeerJS DataChannel instead of a direct WebSocket/fetch connection.
+const PEER_ID_KEY = "vmux_peer_id";
+const PEER_SRV_KEY = "vmux_peer_srv";  // optional custom PeerJS server JSON
+
+// Read peer ID from URL (?peer=ID) or localStorage
+const _peerParam = new URLSearchParams(location.search).get("peer") || "";
+if (_peerParam) localStorage.setItem(PEER_ID_KEY, _peerParam);
+let PEER_ID = _peerParam || localStorage.getItem(PEER_ID_KEY) || "";
+
+// Global peer transport state
+let _peerConn   = null;   // RTCDataConnection (peerjs)
+let _peerPeer   = null;   // Peer instance
+let _peerSubs   = new Set();  // callbacks for incoming state messages
+let _peerReqs   = new Map();  // id → {resolve, reject}
+let _peerReqId  = 1;
+let _peerStatus = "idle";  // idle | connecting | open | error
+const _peerStatusSubs = new Set();
+
+function setPeerStatus(s){ _peerStatus=s; _peerStatusSubs.forEach(fn=>fn(s)); }
+function usePeerStatus(){ const[s,set]=useState(_peerStatus);
+  useEffect(()=>{ const fn=v=>set(v); _peerStatusSubs.add(fn); return()=>_peerStatusSubs.delete(fn); },[]);
+  return s; }
+
+function _peerSend(obj){ _peerConn && _peerConn.send(JSON.stringify(obj)); }
+
+function _setupConn(conn){
+  _peerConn = conn;
+  setPeerStatus("connecting");
+  conn.on("open",()=>{
+    setPeerStatus("open");
+    // send a no-op request to get an initial state snapshot
+    _peerReqId=1; _peerReqs.clear();
+  });
+  conn.on("data", raw=>{
+    let msg; try{ msg=JSON.parse(raw); }catch(e){ return; }
+    if(msg.t==="ws"){
+      _peerSubs.forEach(fn=>fn(msg));
+    } else if(msg.t==="res"){
+      const p=_peerReqs.get(msg.id);
+      if(p){ _peerReqs.delete(msg.id); p.resolve({status:msg.status, body:msg.body}); }
+    }
+  });
+  conn.on("error", e=>{ setPeerStatus("error"); });
+  conn.on("close", ()=>{ setPeerStatus("idle"); _peerConn=null;
+    _peerReqs.forEach(p=>p.reject(new Error("peer closed")));
+    _peerReqs.clear();
+  });
+}
+
+function connectPeer(peerId, srvOpts){
+  if(_peerPeer && !_peerPeer.destroyed) _peerPeer.destroy();
+  PEER_ID = peerId;
+  localStorage.setItem(PEER_ID_KEY, peerId);
+
+  const opts = srvOpts || {};
+  const peerOpts = {
+    host:   opts.host   || "0.peerjs.com",
+    port:   opts.port   || 443,
+    path:   opts.path   || "/",
+    key:    opts.key    || "peerjs",
+    secure: (opts.port||443) === 443,
+    debug:  0,
+  };
+
+  const p = new Peer(peerOpts);
+  _peerPeer = p;
+  setPeerStatus("connecting");
+
+  p.on("open", id=>{
+    // we don't need our own id; immediately connect to the vmux server's peer
+    const conn = p.connect(peerId, { reliable:true, serialization:"raw" });
+    _setupConn(conn);
+  });
+  p.on("error", e=>{ setPeerStatus("error"); });
+}
+
+function disconnectPeer(){
+  if(_peerPeer && !_peerPeer.destroyed) _peerPeer.destroy();
+  _peerPeer=null; _peerConn=null;
+  PEER_ID="";
+  localStorage.removeItem(PEER_ID_KEY);
+  setPeerStatus("idle");
+  location.reload();
+}
+
+// Auto-connect on load if a peer ID was previously saved
+if(PEER_ID) connectPeer(PEER_ID);
+
+// Peer-aware api() — falls back to direct HTTP when no peer connection
+async function peerApi(path, body, method){
+  if(!_peerConn || _peerStatus !== "open"){
+    // direct fallback (works on LAN)
+    const headers={"Content-Type":"application/json"};
+    if(TOKEN) headers["Authorization"]="Bearer "+TOKEN;
+    const r=await fetch("/api"+path,{method:method||(body?"POST":"GET"),headers,body:body?JSON.stringify(body):undefined});
+    if(!r.ok){let m=r.status;try{m=(await r.json()).detail||m;}catch(e){}throw new Error(m);}
+    return r.json();
+  }
+  const id=_peerReqId++;
+  return new Promise((resolve,reject)=>{
+    _peerReqs.set(id,{
+      resolve: r=>{ if(r.status>=400) reject(new Error(r.body&&r.body.detail||r.status)); else resolve(r.body); },
+      reject,
+    });
+    _peerSend({t:"req",id,method:method||(body?"POST":"GET"),path:"/api"+path,body:body||null});
+    setTimeout(()=>{ if(_peerReqs.has(id)){ _peerReqs.delete(id); reject(new Error("timeout")); } }, 10000);
+  });
+}
+
 const ORDER = { needs_input:0, error:1, working:2, idle:3, offline:4 };
 const STATUS_LABEL = { needs_input:"Needs input", error:"Error", working:"Working", idle:"Idle", offline:"Offline" };
 const GROUP_LABEL = { needs_input:"Needs you", error:"Error", working:"Working", idle:"Idle", offline:"Offline" };
 const ACTIONS = [["Ctrl+C","C-c"],["Esc","Escape"],["Tab","Tab"],["Enter","Enter"],["↑","Up"],["↓","Down"],["←","Left"],["→","Right"]];
 
 async function api(path, body, method) {
+  // When a peer connection is active, route through the DataChannel
+  if (PEER_ID && _peerStatus === "open") return peerApi(path, body, method);
   const headers = { "Content-Type":"application/json" };
   if (TOKEN) headers["Authorization"] = "Bearer " + TOKEN;
   const r = await fetch("/api"+path, { method: method || (body?"POST":"GET"), headers,
@@ -392,10 +514,28 @@ function useSwarm(){
   const [panes,setPanes]=useState([]);
   // connecting | live | unauthorized | offline — so a failed socket is never a silent empty grid
   const [status,setStatus]=useState("connecting");
+  const peerSt=usePeerStatus();
+
   useEffect(()=>{
+    // ── Peer DataChannel mode ──────────────────────────────────────────────
+    if(PEER_ID){
+      let stop=false, t;
+      const onMsg=(msg)=>{ if(stop) return; if(msg.type==="state"){ setPanes(msg.panes); setStatus("live"); } };
+      _peerSubs.add(onMsg);
+
+      const tick=()=>{
+        if(stop) return;
+        if(peerSt==="open"){ setStatus("live"); }
+        else if(peerSt==="error"){ setStatus("offline"); }
+        else { setStatus("connecting"); }
+        t=setTimeout(tick,1500);
+      };
+      tick();
+      return ()=>{ stop=true; clearTimeout(t); _peerSubs.delete(onMsg); };
+    }
+
+    // ── Direct WebSocket mode (LAN / localhost) ────────────────────────────
     let ws, stop=false, t;
-    // when the socket won't open, classify why via a REST probe (the WS handshake
-    // rejection can't carry a reason to the browser)
     const probe=async()=>{
       try{
         const r=await fetch("/api/state",{headers:TOKEN?{Authorization:"Bearer "+TOKEN}:{}});
@@ -422,7 +562,7 @@ function useSwarm(){
     };
     connect();
     return ()=>{ stop=true; clearTimeout(t); if(ws) try{ws.close();}catch(_){} };
-  },[]);
+  },[peerSt]);
   return { panes, status };
 }
 
@@ -723,6 +863,51 @@ function TokenGate(){
   </div>`;
 }
 
+function PeerGate(){
+  const [pid,setPid]=useState("");
+  const peerSt=usePeerStatus();
+  const connect=()=>{
+    const id=pid.trim();
+    if(!id) return;
+    connectPeer(id);
+  };
+  const statusText = peerSt==="connecting" ? "Connecting…"
+    : peerSt==="open" ? "Connected"
+    : peerSt==="error" ? "Could not connect — check the peer ID"
+    : "";
+  const statusCls = peerSt==="open" ? "peer-status ok"
+    : peerSt==="error" ? "peer-status err"
+    : "peer-status";
+
+  if(peerSt==="open") return null;  // App handles the rest once connected
+
+  return html`<div class="gate">
+    <div class="gate-card glass">
+      <div class="gate-logo">v<b>mux</b></div>
+      <div class="gate-title">Connect remotely</div>
+      <div class="gate-sub">
+        Enter the <b>Peer ID</b> shown in your terminal when vmux starts with <code>--peer-id</code>.
+        The ID looks like <code>amber-brook-4729</code>.
+      </div>
+      <input class="gate-input" name="peerid" autocomplete="off" spellcheck="false"
+        placeholder="amber-brook-4729"
+        value=${pid} onInput=${e=>setPid(e.target.value)}
+        onKeyDown=${e=>{ if(e.key==="Enter") connect(); }} />
+      <div class=${statusCls}>${statusText}</div>
+      <button class="btn accent gate-btn" onClick=${connect}
+        disabled=${peerSt==="connecting"}>
+        ${peerSt==="connecting" ? "Connecting…" : "Connect"}
+      </button>
+      <div style=${{marginTop:"14px",fontSize:"12px",color:"var(--label-3)"}}>
+        On the same network?${" "}
+        <button class="link-btn" onClick=${()=>{ localStorage.removeItem(PEER_ID_KEY); location.href=location.pathname; }}>
+          Use direct mode
+        </button>
+      </div>
+    </div>
+  </div>`;
+}
+
 /* ===================== Settings ===================== */
 function Switch({on, onChange}){
   return html`<label class="switch">
@@ -889,6 +1074,23 @@ function SettingsContent({panes}){
       <${Row} label="Access token"><button class="link-btn" onClick=${reAuth}>Change…</button><//>
       <${Row} label="Sign out" sub="clear token on this device"><button class="link-btn danger" onClick=${reAuth}>Sign out</button><//>
     </div>
+
+    <div class="set-group-title">Remote access (WebRTC)</div>
+    <div class="set-group">
+      ${PEER_ID
+        ? html`<${Row} label="Peer ID">
+            <div style=${{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:"4px"}}>
+              <span class="peer-id-display">${PEER_ID}</span>
+              <button class="link-btn danger" onClick=${disconnectPeer}>Disconnect</button>
+            </div>
+          <//>
+          <${Row} label="Status"><span class="set-sub">${_peerStatus}</span><//>
+          `
+        : html`<${Row} label="Connect via Peer ID">
+            <button class="link-btn" onClick=${()=>{ location.href="?peer="; }}>Set up…</button>
+          <//>`
+      }
+    </div>
   </div>`;
 }
 
@@ -909,7 +1111,11 @@ function App(){
   const idiom = useIdiom();
   const [bc,setBc]=useState(false);
   const [settings,setSettings]=useState(false);
+  const peerSt=usePeerStatus();
   useNeedsNotify(panes);
+
+  // Show peer connect gate when a peer ID is stored but WebRTC isn't open yet
+  if(PEER_ID && peerSt !== "open") return html`<${PeerGate} />`;
   if(status==="unauthorized") return html`<${TokenGate} />`;
   const connected = status==="live";
   const onBroadcast=()=>setBc(true), onSettings=()=>setSettings(true);

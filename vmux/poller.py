@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import time
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Set
 
 from . import tmux
 from .config import Config
@@ -58,6 +58,7 @@ class Hub:
         self._meta: Dict[str, dict] = {}   # id -> {hash, updated}
         self._wake = asyncio.Event()
         self._stop = False
+        self._peer_bridge: Optional[object] = None  # PeerBridge, set by server.py
 
     # -- selection of which panes to show ---------------------------------- #
     def _included(self, pane: dict, kind: str) -> bool:
@@ -151,8 +152,6 @@ class Hub:
         }
 
     async def broadcast(self) -> None:
-        if not self.clients:
-            return
         payload = self.snapshot()
         dead = []
         for sid, c in list(self.clients.items()):
@@ -162,6 +161,12 @@ class Hub:
                 dead.append(sid)
         for sid in dead:
             self.clients.pop(sid, None)
+        # notify peer bridge (sync call — it enqueues to DataChannel senders)
+        if self._peer_bridge is not None:
+            try:
+                self._peer_bridge.notify(payload)
+            except Exception:
+                pass
 
     # -- client/session tracking ------------------------------------------ #
     def add_client(self, sid, ws, ip, ua, ts):

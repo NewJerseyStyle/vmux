@@ -38,7 +38,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "ruff>=0.6"]
+dev  = ["pytest>=8.0", "ruff>=0.6"]
+# WebRTC remote access (NAT traversal, no VPN needed):
+#   pip install "vmux[peer]"
+# Linux also needs: apt install libavdevice-dev libavfilter-dev libopus-dev libvpx-dev pkg-config
+# macOS  also needs: brew install ffmpeg opus libvpx pkg-config
+peer = [
+    "aiortc>=1.9",
+    "aiohttp>=3.9",
+]
 
 [project.urls]
 Homepage = "https://github.com/imitation-alpha/vmux"

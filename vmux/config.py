@@ -77,6 +77,13 @@ class Config:
     generic_re: List["re.Pattern"] = field(default_factory=list, repr=False)
     error_re: List["re.Pattern"] = field(default_factory=list, repr=False)
 
+    # peer bridge (WebRTC remote access) — set via CLI --peer-id or config.yaml
+    peer_id:      str = ""
+    peerjs_host:  str = "0.peerjs.com"
+    peerjs_port:  int = 443
+    peerjs_path:  str = "/"
+    peerjs_key:   str = "peerjs"
+
     # where UI-managed settings persist (set by load(); not part of editable_dict)
     overlay_path: Optional[str] = field(default=None, repr=False)
 
@@ -207,9 +214,10 @@ def load(path: Optional[str]) -> Config:
         with open(path, "r") as fh:
             data = yaml.safe_load(fh) or {}
 
-    server = data.get("server", {}) or {}
+    server    = data.get("server", {}) or {}
     discovery = data.get("discovery", {}) or {}
     detectors = data.get("detectors", {}) or {}
+    peer_cfg  = data.get("peer", {}) or {}
 
     overrides: Dict[str, PaneOverride] = {}
     for entry in data.get("panes", []) or []:
@@ -230,6 +238,10 @@ def load(path: Optional[str]) -> Config:
         overrides=overrides,
         generic_prompt_patterns=detectors.get("generic_prompt_patterns", list(DEFAULT_GENERIC_PROMPTS)),
         error_patterns=detectors.get("error_patterns", list(DEFAULT_ERROR_PATTERNS)),
+        peerjs_host=str(peer_cfg.get("host", "0.peerjs.com")),
+        peerjs_port=int(peer_cfg.get("port", 443)),
+        peerjs_path=str(peer_cfg.get("path", "/")),
+        peerjs_key=str(peer_cfg.get("key", "peerjs")),
     )
     # layer UI-managed settings (if any) over the YAML — overlay wins
     cfg.overlay_path = _overlay_path_for(path)

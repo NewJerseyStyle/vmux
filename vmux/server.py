@@ -66,12 +66,20 @@ def create_app(cfg: Config) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         import asyncio
-        task = asyncio.create_task(hub.run())
+        tasks = [asyncio.create_task(hub.run())]
+        if cfg.peer_id:
+            from .peer import PeerBridge
+            bridge = PeerBridge(cfg, hub, cfg.peer_id)
+            hub._peer_bridge = bridge
+            tasks.append(asyncio.create_task(bridge.run()))
         try:
             yield
         finally:
             hub.stop()
-            task.cancel()
+            if cfg.peer_id:
+                hub._peer_bridge.stop()
+            for t in tasks:
+                t.cancel()
 
     app = FastAPI(title="vmux", version=__version__, lifespan=lifespan)
     app.state.hub = hub
