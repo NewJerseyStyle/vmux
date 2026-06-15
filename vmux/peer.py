@@ -25,7 +25,7 @@ from typing import Callable, Dict, Optional, Set, Tuple
 log = logging.getLogger(__name__)
 
 # Defaults — override via config.yaml peer: section
-DEFAULT_PEERJS_HOST = "0.peerjs.com"
+DEFAULT_PEERJS_HOST = "peerjs-hcbtcmc2dyecbxa6.centralus-01.azurewebsites.net"
 DEFAULT_PEERJS_PORT = 443
 DEFAULT_PEERJS_PATH = "/"
 DEFAULT_PEERJS_KEY  = "peerjs"

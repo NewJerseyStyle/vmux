@@ -79,7 +79,7 @@ class Config:
 
     # peer bridge (WebRTC remote access) — set via CLI --peer-id or config.yaml
     peer_id:      str = ""
-    peerjs_host:  str = "0.peerjs.com"
+    peerjs_host:  str = "peerjs-hcbtcmc2dyecbxa6.centralus-01.azurewebsites.net"
     peerjs_port:  int = 443
     peerjs_path:  str = "/"
     peerjs_key:   str = "peerjs"
@@ -238,7 +238,7 @@ def load(path: Optional[str]) -> Config:
         overrides=overrides,
         generic_prompt_patterns=detectors.get("generic_prompt_patterns", list(DEFAULT_GENERIC_PROMPTS)),
         error_patterns=detectors.get("error_patterns", list(DEFAULT_ERROR_PATTERNS)),
-        peerjs_host=str(peer_cfg.get("host", "0.peerjs.com")),
+        peerjs_host=str(peer_cfg.get("host", "peerjs-hcbtcmc2dyecbxa6.centralus-01.azurewebsites.net")),
         peerjs_port=int(peer_cfg.get("port", 443)),
         peerjs_path=str(peer_cfg.get("path", "/")),
         peerjs_key=str(peer_cfg.get("key", "peerjs")),
