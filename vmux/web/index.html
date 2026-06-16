@@ -898,12 +898,12 @@ function PeerGate(){
         disabled=${peerSt==="connecting"}>
         ${peerSt==="connecting" ? "Connecting…" : "Connect"}
       </button>
-      <div style=${{marginTop:"14px",fontSize:"12px",color:"var(--label-3)"}}>
+      ${PEER_ID && html`<div style=${{marginTop:"14px",fontSize:"12px",color:"var(--label-3)"}}>
         On the same network?${" "}
         <button class="link-btn" onClick=${()=>{ localStorage.removeItem(PEER_ID_KEY); location.href=location.pathname; }}>
           Use direct mode
         </button>
-      </div>
+      </div>`}
     </div>
   </div>`;
 }
@@ -1114,8 +1114,11 @@ function App(){
   const peerSt=usePeerStatus();
   useNeedsNotify(panes);
 
-  // Show peer connect gate when a peer ID is stored but WebRTC isn't open yet
+  // Show peer connect gate when:
+  //  a) a peer ID is stored but the WebRTC channel isn't open yet, OR
+  //  b) no peer ID set and the direct API is unreachable (i.e. we're on GitHub Pages)
   if(PEER_ID && peerSt !== "open") return html`<${PeerGate} />`;
+  if(!PEER_ID && status === "offline") return html`<${PeerGate} />`;
   if(status==="unauthorized") return html`<${TokenGate} />`;
   const connected = status==="live";
   const onBroadcast=()=>setBc(true), onSettings=()=>setSettings(true);
