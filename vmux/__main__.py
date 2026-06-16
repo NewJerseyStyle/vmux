@@ -60,7 +60,7 @@ def main(argv=None) -> int:
         "token set" if cfg.token else "no token, localhost only",
     ))
     if cfg.peer_id:
-        print("vmux peer  -> %s  (enter this ID in the vmux PWA to connect remotely)" % cfg.peer_id)
+        print("vmux peer  -> https://vmux.imitationalpha.com/?peer=%s" % cfg.peer_id)
     uvicorn.run(app, host=cfg.host, port=cfg.port, log_level="warning")
     return 0
 
