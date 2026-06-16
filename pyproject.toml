@@ -3,7 +3,7 @@ name = "vmux"
 version = "0.1.0"
 description = "Attention router for a swarm of CLI coding agents running in tmux — drive your Claude Code / Codex / Gemini swarm from your phone."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "imitation-alpha" }]
@@ -21,7 +21,6 @@ classifiers = [
     "Operating System :: MacOS",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
