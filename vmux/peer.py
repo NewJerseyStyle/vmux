@@ -108,7 +108,7 @@ class PeerBridge:
     async def _run_once(self) -> None:
         try:
             import aiohttp
-            from aiortc import RTCPeerConnection, RTCIceCandidate, RTCSessionDescription  # noqa: F401
+            from aiortc import RTCIceCandidate, RTCPeerConnection, RTCSessionDescription  # noqa: F401
         except ImportError as exc:
             raise ImportError(
                 "pip install 'vmux[peer]'  (needs aiortc + aiohttp)"
@@ -131,8 +131,7 @@ class PeerBridge:
         # (src_peer_id, connection_id) → RTCPeerConnection
         peers: Dict[Tuple[str, str], RTCPeerConnection] = {}
 
-        import aiohttp as _aiohttp
-        async with _aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession() as session:
             async with session.ws_connect(ws_url, heartbeat=25) as ws:
                 # first message must be OPEN
                 raw = await ws.receive(timeout=10)
@@ -147,9 +146,9 @@ class PeerBridge:
                 async for raw in ws:
                     if self._stop:
                         break
-                    if raw.type in (_aiohttp.WSMsgType.CLOSED, _aiohttp.WSMsgType.ERROR):
+                    if raw.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
                         break
-                    if raw.type != _aiohttp.WSMsgType.TEXT:
+                    if raw.type != aiohttp.WSMsgType.TEXT:
                         continue
 
                     msg   = json.loads(raw.data)

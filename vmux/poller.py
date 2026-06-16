@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import time
-from typing import Callable, Dict, List, Optional, Set
+from typing import Dict, List, Optional
 
 from . import tmux
 from .config import Config
