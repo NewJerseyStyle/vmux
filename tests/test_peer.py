@@ -7,7 +7,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from vmux import config
-from vmux.peer import PeerBridge, _parse_ice, random_peer_id
+from vmux.peer import PeerBridge, _IdTaken, _parse_ice, random_peer_id
 
 # ── random_peer_id ────────────────────────────────────────────────────────── #
 
@@ -26,11 +26,13 @@ _NOUNS = [
 def test_random_peer_id_format():
     pid = random_peer_id()
     parts = pid.split("-")
-    assert len(parts) == 3, "expected adj-noun-NNNN"
-    adj, noun, num = parts
+    assert len(parts) == 3, "expected adj-noun-<12hex>"
+    adj, noun, hex_suffix = parts
     assert adj in _ADJECTIVES
     assert noun in _NOUNS
-    assert num.isdigit() and 1000 <= int(num) <= 9999
+    # 12 hex chars (secrets.token_hex(6) = 48 bits of entropy)
+    assert len(hex_suffix) == 12
+    assert all(c in "0123456789abcdef" for c in hex_suffix)
 
 
 def test_random_peer_id_is_random():
@@ -43,6 +45,7 @@ def test_random_peer_id_is_random():
 def test_config_peer_defaults():
     c = config.Config()
     assert c.peer_id == ""
+    assert c.peer_password == ""
     assert "peerjs" in c.peerjs_host or "azurewebsites" in c.peerjs_host
     assert c.peerjs_port == 443
     assert c.peerjs_path == "/"
@@ -52,7 +55,7 @@ def test_config_peer_defaults():
 def test_config_peer_fields_not_in_editable_dict():
     # peer settings are server-side only; they must not be exposed to the UI
     d = config.Config().editable_dict()
-    for key in ("peer_id", "peerjs_host", "peerjs_port", "peerjs_path", "peerjs_key"):
+    for key in ("peer_id", "peer_password", "peerjs_host", "peerjs_port", "peerjs_path", "peerjs_key"):
         assert key not in d
 
 
@@ -72,12 +75,26 @@ def test_load_peer_section_from_yaml(tmp_path):
     assert c.peerjs_key == "mykey"
 
 
+def test_load_peer_password_from_yaml(tmp_path):
+    cfgfile = tmp_path / "config.yaml"
+    cfgfile.write_text("peer:\n  password: s3cr3t\n")
+    c = config.load(str(cfgfile))
+    assert c.peer_password == "s3cr3t"
+
+
 def test_load_missing_peer_section_uses_defaults(tmp_path):
     cfgfile = tmp_path / "config.yaml"
     cfgfile.write_text("poll_interval: 1.0\n")
     c = config.load(str(cfgfile))
     assert c.peerjs_port == 443
     assert c.peerjs_key == "peerjs"
+    assert c.peer_password == ""
+
+
+def test_id_taken_is_exception():
+    exc = _IdTaken("amber-brook-a3f2c8b1d4e2")
+    assert isinstance(exc, Exception)
+    assert "amber-brook" in str(exc)
 
 
 # ── Hub._peer_bridge integration ──────────────────────────────────────────── #

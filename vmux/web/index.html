@@ -369,11 +369,16 @@ function usePrefs(){ const [,f]=useState(0); useEffect(()=>{ const fn=()=>f(x=>x
 // PeerJS DataChannel instead of a direct WebSocket/fetch connection.
 const PEER_ID_KEY = "vmux_peer_id";
 const PEER_SRV_KEY = "vmux_peer_srv";  // optional custom PeerJS server JSON
+const PEER_PW_KEY  = "vmux_peer_pw";   // sessionStorage — cleared when browser closes
 
 // Read peer ID from URL (?peer=ID) or localStorage
 const _peerParam = new URLSearchParams(location.search).get("peer") || "";
 if (_peerParam) localStorage.setItem(PEER_ID_KEY, _peerParam);
 let PEER_ID = _peerParam || localStorage.getItem(PEER_ID_KEY) || "";
+
+// Session password — from sessionStorage so it survives page reloads but not new tabs
+let _peerPassword = sessionStorage.getItem(PEER_PW_KEY) || "";
+let _peerAuthErr  = "";   // last auth-failure reason, read by PeerGate
 
 // Global peer transport state
 let _peerConn   = null;   // RTCDataConnection (peerjs)
@@ -395,13 +400,19 @@ function _setupConn(conn){
   _peerConn = conn;
   setPeerStatus("connecting");
   conn.on("open",()=>{
-    setPeerStatus("open");
-    // send a no-op request to get an initial state snapshot
+    // Auth handshake — server will not serve until it receives this
+    conn.send(JSON.stringify({t:"auth", password:_peerPassword}));
     _peerReqId=1; _peerReqs.clear();
+    // "open" is deferred until the server replies with auth_ok
   });
   conn.on("data", raw=>{
     let msg; try{ msg=JSON.parse(raw); }catch(e){ return; }
-    if(msg.t==="ws"){
+    if(msg.t==="auth_ok"){
+      setPeerStatus("open");
+    } else if(msg.t==="auth_err"){
+      _peerAuthErr = msg.reason || "wrong password";
+      setPeerStatus("error");
+    } else if(msg.t==="ws"){
       _peerSubs.forEach(fn=>fn(msg));
     } else if(msg.t==="res"){
       const p=_peerReqs.get(msg.id);
@@ -415,7 +426,10 @@ function _setupConn(conn){
   });
 }
 
-function connectPeer(peerId, srvOpts){
+function connectPeer(peerId, password, srvOpts){
+  _peerAuthErr = "";
+  _peerPassword = password != null ? String(password) : _peerPassword;
+  if(_peerPassword) sessionStorage.setItem(PEER_PW_KEY, _peerPassword);
   if(_peerPeer && !_peerPeer.destroyed) _peerPeer.destroy();
   PEER_ID = peerId;
   localStorage.setItem(PEER_ID_KEY, peerId);
@@ -445,14 +459,15 @@ function connectPeer(peerId, srvOpts){
 function disconnectPeer(){
   if(_peerPeer && !_peerPeer.destroyed) _peerPeer.destroy();
   _peerPeer=null; _peerConn=null;
-  PEER_ID="";
+  PEER_ID=""; _peerPassword=""; _peerAuthErr="";
   localStorage.removeItem(PEER_ID_KEY);
+  sessionStorage.removeItem(PEER_PW_KEY);
   setPeerStatus("idle");
   location.reload();
 }
 
-// Auto-connect on load if a peer ID was previously saved
-if(PEER_ID) connectPeer(PEER_ID);
+// Auto-connect on load if a peer ID was previously saved (uses sessionStorage password)
+if(PEER_ID) connectPeer(PEER_ID, _peerPassword);
 
 // Peer-aware api() — falls back to direct HTTP when no peer connection
 async function peerApi(path, body, method){
@@ -864,17 +879,18 @@ function TokenGate(){
 }
 
 function PeerGate(){
-  const [pid,setPid]=useState("");
+  const [pid,setPid]=useState(PEER_ID || "");
+  const [pw,setPw]=useState("");
   const peerSt=usePeerStatus();
   const connect=()=>{
     const id=pid.trim();
     if(!id) return;
-    connectPeer(id);
+    connectPeer(id, pw);
   };
+  const errMsg = peerSt==="error" ? (_peerAuthErr || "Could not connect — check the peer ID and password") : "";
   const statusText = peerSt==="connecting" ? "Connecting…"
     : peerSt==="open" ? "Connected"
-    : peerSt==="error" ? "Could not connect — check the peer ID"
-    : "";
+    : errMsg;
   const statusCls = peerSt==="open" ? "peer-status ok"
     : peerSt==="error" ? "peer-status err"
     : "peer-status";
@@ -886,17 +902,25 @@ function PeerGate(){
       <div class="gate-logo">v<b>mux</b></div>
       <div class="gate-title">Connect remotely</div>
       <div class="gate-sub">
-        Enter the <b>Peer ID</b> shown in your terminal when vmux starts with <code>--peer-id</code>.
-        The ID looks like <code>amber-brook-4729</code>.
+        Enter the <b>Peer ID</b> shown in your terminal when vmux starts with <code>--peer</code>.
       </div>
-      <input class="gate-input" name="peerid" autocomplete="off" spellcheck="false"
-        placeholder="amber-brook-4729"
+      ${!PEER_ID && html`<input class="gate-input" name="peerid" autocomplete="off" spellcheck="false"
+        placeholder="amber-brook-a3f2c8b1d4e2"
         value=${pid} onInput=${e=>setPid(e.target.value)}
+        onKeyDown=${e=>{ if(e.key==="Enter") connect(); }} />`}
+      ${PEER_ID && html`<div style=${{
+        fontFamily:"monospace",fontSize:"13px",color:"var(--label-2)",
+        background:"var(--fill)",borderRadius:"8px",padding:"8px 12px",
+        marginBottom:"8px",wordBreak:"break-all"
+      }}>${PEER_ID}</div>`}
+      <input class="gate-input" type="password" name="peer-password" autocomplete="current-password"
+        placeholder="Password (leave empty if none set)"
+        value=${pw} onInput=${e=>setPw(e.target.value)}
         onKeyDown=${e=>{ if(e.key==="Enter") connect(); }} />
       <div class=${statusCls}>${statusText}</div>
       <button class="btn accent gate-btn" onClick=${connect}
         disabled=${peerSt==="connecting"}>
-        ${peerSt==="connecting" ? "Connecting…" : "Connect"}
+        ${peerSt==="connecting" ? "Connecting…" : peerSt==="error" ? "Retry" : "Connect"}
       </button>
       ${PEER_ID && html`<div style=${{marginTop:"14px",fontSize:"12px",color:"var(--label-3)"}}>
         On the same network?${" "}

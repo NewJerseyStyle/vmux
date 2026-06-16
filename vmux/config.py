@@ -77,12 +77,13 @@ class Config:
     generic_re: List["re.Pattern"] = field(default_factory=list, repr=False)
     error_re: List["re.Pattern"] = field(default_factory=list, repr=False)
 
-    # peer bridge (WebRTC remote access) — set via CLI --peer-id or config.yaml
-    peer_id:      str = ""
-    peerjs_host:  str = "peerjs-hcbtcmc2dyecbxa6.centralus-01.azurewebsites.net"
-    peerjs_port:  int = 443
-    peerjs_path:  str = "/"
-    peerjs_key:   str = "peerjs"
+    # peer bridge (WebRTC remote access) — set via CLI --peer or config.yaml
+    peer_id:       str = ""
+    peer_password: str = ""   # optional; if set, DataChannel clients must supply it
+    peerjs_host:   str = "peerjs-hcbtcmc2dyecbxa6.centralus-01.azurewebsites.net"
+    peerjs_port:   int = 443
+    peerjs_path:   str = "/"
+    peerjs_key:    str = "peerjs"
 
     # where UI-managed settings persist (set by load(); not part of editable_dict)
     overlay_path: Optional[str] = field(default=None, repr=False)
@@ -238,6 +239,7 @@ def load(path: Optional[str]) -> Config:
         overrides=overrides,
         generic_prompt_patterns=detectors.get("generic_prompt_patterns", list(DEFAULT_GENERIC_PROMPTS)),
         error_patterns=detectors.get("error_patterns", list(DEFAULT_ERROR_PATTERNS)),
+        peer_password=str(peer_cfg.get("password", "")),
         peerjs_host=str(peer_cfg.get("host", "peerjs-hcbtcmc2dyecbxa6.centralus-01.azurewebsites.net")),
         peerjs_port=int(peer_cfg.get("port", 443)),
         peerjs_path=str(peer_cfg.get("path", "/")),

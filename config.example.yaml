@@ -24,6 +24,7 @@ panes:
 # bridge is disabled and none of these fields have any effect.
 #
 # peer:
+#   password: ""   # optional — if set, remote browsers must enter this to connect
 #   host: peerjs-hcbtcmc2dyecbxa6.centralus-01.azurewebsites.net
 #   port: 443
 #   path: /

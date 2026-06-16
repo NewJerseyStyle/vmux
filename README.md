@@ -37,21 +37,24 @@ Open **http://127.0.0.1:8787**. That's it — vmux auto-discovers every tmux pan
 
 ## Reach it from anywhere — no VPN needed
 
-vmux includes a built-in **WebRTC peer bridge**. Start it with `--peer-id`:
+vmux includes a built-in **WebRTC peer bridge**. Start it with `--peer`:
 
 ```bash
 pip install "vmux[peer]"   # adds aiortc + aiohttp
-vmux --peer-id             # prints a friendly ID, e.g.  amber-brook-4729
+vmux --peer                # prompts for optional password, prints peer URL
 ```
 
 ```
-vmux peer  -> https://vmux.imitationalpha.com/?peer=amber-brook-4729
+vmux peer password (press Enter to skip): ••••••••
+vmux peer  -> https://vmux.imitationalpha.com/?peer=amber-brook-a3f2c8b1d4e2
 ```
 
 Open that URL on your phone (or share it to any browser, anywhere). The hosted
 [vmux.imitationalpha.com](https://vmux.imitationalpha.com) page connects back to your local
 server over a direct P2P WebRTC channel — **no VPN, no port forwarding, no account, $0**.
-The peer ID changes each restart; it is not a secret but is only useful while vmux is running.
+The peer ID is always auto-generated (high entropy — ~57 bits, hard to enumerate) and resets on
+each restart. On startup you can set an optional session password; remote browsers are prompted
+for it before they get access.
 
 ### Stay on your local network instead
 

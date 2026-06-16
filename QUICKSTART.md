@@ -26,24 +26,20 @@ The easiest way to reach vmux remotely is the built-in peer bridge:
 
 ```bash
 pip install "vmux[peer]"    # adds aiortc + aiohttp
-vmux --peer-id              # auto-generates a friendly peer ID
+vmux --peer                 # prompts for optional password, then prints the peer URL
 ```
 
 On startup you'll see:
 
 ```
-vmux peer  -> https://vmux.imitationalpha.com/?peer=amber-brook-4729
+vmux peer password (press Enter to skip): ••••••••
+vmux peer  -> https://vmux.imitationalpha.com/?peer=amber-brook-a3f2c8b1d4e2
 ```
 
 Open that URL on any device, anywhere. The hosted page connects back to your machine
 over a direct WebRTC channel — **no VPN, no port forwarding required**. The peer ID
-resets each time you restart vmux.
-
-To pin a specific ID instead of generating one each time:
-
-```bash
-vmux --peer-id my-custom-id-1234
-```
+is always auto-generated (high entropy) and resets on each restart. If you set a
+password at startup, the remote browser will be prompted for it before gaining access.
 
 **Linux dependencies for aiortc:**
 

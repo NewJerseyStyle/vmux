@@ -6,7 +6,6 @@ import argparse
 import sys
 
 from . import __version__, config, tmux
-from .peer import random_peer_id
 from .server import create_app
 
 
@@ -21,8 +20,8 @@ def main(argv=None) -> int:
     parser.add_argument("--token", help="override bearer token")
     parser.add_argument("--include-shells", action="store_true",
                         help="also show plain idle shells, not just agents")
-    parser.add_argument("--peer-id", metavar="ID",
-                        help="enable WebRTC remote access; omit to auto-generate an ID "
+    parser.add_argument("--peer", action="store_true",
+                        help="enable WebRTC remote access with an auto-generated peer ID "
                              "(requires pip install 'vmux[peer]')")
     parser.add_argument("--version", action="version", version="vmux " + __version__)
     args = parser.parse_args(argv)
@@ -41,9 +40,19 @@ def main(argv=None) -> int:
         cfg.token = args.token
     if args.include_shells:
         cfg.include_shells = True
-    if args.peer_id is not None:
-        # empty string → auto-generate; explicit value → use as-is
-        cfg.peer_id = args.peer_id.strip() or random_peer_id()
+    if args.peer:
+        from .peer import random_peer_id
+        cfg.peer_id = random_peer_id()
+        # Prompt for a session password if one is not already set in config.yaml
+        if not cfg.peer_password:
+            import getpass
+            try:
+                pw = getpass.getpass(
+                    "vmux peer password (press Enter to skip): "
+                )
+            except (EOFError, KeyboardInterrupt):
+                pw = ""
+            cfg.peer_password = pw.strip()
     cfg.validate()
 
     if not tmux.list_panes():

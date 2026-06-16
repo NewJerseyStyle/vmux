@@ -6,6 +6,8 @@ peer ID — no VPN or port forwarding required.
 
 Protocol over the single DataChannel (all messages are JSON strings):
 
+  client → server  {"t":"auth","password":"..."}               (must be first)
+  server → client  {"t":"auth_ok"}  |  {"t":"auth_err","reason":"..."}
   client → server  {"t":"req","id":N,"method":"GET","path":"/api/state","body":null}
   server → client  {"t":"res","id":N,"status":200,"body":{...}}
   server → client  {"t":"ws","type":"state","panes":[...]}    (periodic push)
@@ -43,12 +45,20 @@ _NOUNS = [
 ]
 
 
+class _IdTaken(Exception):
+    """Raised when the PeerJS server rejects the peer ID as already registered."""
+
+
 def random_peer_id() -> str:
-    """Return a memorable random ID like 'amber-brook-4729'."""
+    """Return a high-entropy peer ID like 'amber-brook-a3f2c8b1d4e2'.
+
+    Format: adjective-noun-<12 hex chars>  (~57 bits of entropy — hard to
+    enumerate even by scanning the PeerJS server at scale).
+    """
     return "{}-{}-{}".format(
         secrets.choice(_ADJECTIVES),
         secrets.choice(_NOUNS),
-        secrets.randbelow(9000) + 1000,
+        secrets.token_hex(6),   # 12 hex chars = 48 bits
     )
 
 
@@ -59,6 +69,8 @@ class PeerBridge:
     ``peer.connect(peer_id)`` gets its own RTCPeerConnection and DataChannel.
     """
 
+    _MAX_UNAUTHED = 5   # max concurrent unauthenticated DataChannels
+
     def __init__(self, cfg, hub, peer_id: str) -> None:
         self.cfg     = cfg
         self.hub     = hub
@@ -66,6 +78,7 @@ class PeerBridge:
         self._stop   = False
         # sync callbacks: hub calls these after every broadcast
         self._hub_listeners: Set[Callable[[dict], None]] = set()
+        self._unauthed_count: int = 0   # concurrent unauthenticated channels
 
     # ------------------------------------------------------------------ #
     # Hub integration                                                      #
@@ -91,6 +104,14 @@ class PeerBridge:
             try:
                 await self._run_once()
                 backoff = 2.0
+            except _IdTaken:
+                if self._stop:
+                    break
+                old = self.peer_id
+                self.peer_id = random_peer_id()
+                log.warning("[peer] ID '%s' already taken — retrying with '%s'", old, self.peer_id)
+                print("vmux peer  -> https://vmux.imitationalpha.com/?peer=%s" % self.peer_id, flush=True)
+                # no sleep — reconnect immediately with fresh ID
             except Exception as exc:
                 if self._stop:
                     break
@@ -133,12 +154,14 @@ class PeerBridge:
 
         async with aiohttp.ClientSession() as session:
             async with session.ws_connect(ws_url, heartbeat=25) as ws:
-                # first message must be OPEN
+                # first message must be OPEN (or ID-TAKEN)
                 raw = await ws.receive(timeout=10)
                 first = json.loads(raw.data)
+                if first.get("type") == "ID-TAKEN":
+                    raise _IdTaken(self.peer_id)
                 if first.get("type") != "OPEN":
                     raise RuntimeError("PeerJS server did not send OPEN: %s" % first)
-                log.info("[peer] registered — share this ID with your vmux PWA: %s", self.peer_id)
+                log.info("[peer] registered  (id: %s)", self.peer_id)
 
                 async def send(obj: dict) -> None:
                     await ws.send_json(obj)
@@ -249,24 +272,91 @@ class PeerBridge:
     # ------------------------------------------------------------------ #
 
     async def _serve_channel(self, channel, peer_label: str) -> None:
-        """Serve one open DataChannel: proxy REST requests and push state."""
+        """Serve one open DataChannel: auth handshake, then proxy REST + push state."""
+        peer_password = getattr(self.cfg, "peer_password", "")
+
+        # ── rate limit: cap unauthenticated connections ────────────────────
+        if self._unauthed_count >= self._MAX_UNAUTHED:
+            try:
+                channel.send(json.dumps({"t": "auth_err", "reason": "rate limited"}))
+            except Exception:
+                pass
+            log.warning("[peer] rate-limited connection from %s", peer_label)
+            return
+
+        self._unauthed_count += 1
+        log.debug("[peer] channel open  ← %s", peer_label)
+
         cfg       = self.cfg
         local_url = "http://127.0.0.1:%d" % cfg.port
         token     = cfg.token or ""
         loop      = asyncio.get_event_loop()
-        queue: asyncio.Queue = asyncio.Queue()
 
-        # send current snapshot immediately on connect
-        queue.put_nowait(self.hub.snapshot())
+        # Single queue for all incoming messages; auth consumes the first one.
+        msg_q:  asyncio.Queue = asyncio.Queue(maxsize=256)
+        push_q: asyncio.Queue = asyncio.Queue()
+
+        @channel.on("message")
+        def on_message(data: str) -> None:
+            try:
+                msg_q.put_nowait(data)
+            except asyncio.QueueFull:
+                pass
+
+        @channel.on("close")
+        def on_close() -> None:
+            msg_q.put_nowait(None)
+            push_q.put_nowait(None)
 
         def on_hub_push(payload: dict) -> None:
             try:
-                loop.call_soon_threadsafe(queue.put_nowait, payload)
+                loop.call_soon_threadsafe(push_q.put_nowait, payload)
             except Exception:
                 pass
 
+        # ── auth handshake ─────────────────────────────────────────────────
+        authed = False
+        try:
+            raw = await asyncio.wait_for(msg_q.get(), timeout=10.0)
+            if raw is None:
+                return   # channel closed before auth
+            try:
+                auth_msg = json.loads(raw)
+            except Exception:
+                auth_msg = {}
+            pw_ok = (
+                auth_msg.get("t") == "auth"
+                and auth_msg.get("password", "") == peer_password
+            )
+            if pw_ok:
+                try:
+                    channel.send(json.dumps({"t": "auth_ok"}))
+                except Exception:
+                    return
+                log.debug("[peer] authenticated  ← %s", peer_label)
+                authed = True
+            else:
+                await asyncio.sleep(2)   # intentional delay against brute force
+                try:
+                    channel.send(json.dumps({"t": "auth_err", "reason": "wrong password"}))
+                except Exception:
+                    pass
+                log.warning("[peer] auth failure  ← %s", peer_label)
+        except asyncio.TimeoutError:
+            try:
+                channel.send(json.dumps({"t": "auth_err", "reason": "timeout"}))
+            except Exception:
+                pass
+            log.warning("[peer] auth timeout  ← %s", peer_label)
+        finally:
+            self._unauthed_count -= 1
+
+        if not authed:
+            return
+
+        # ── serve phase ────────────────────────────────────────────────────
+        push_q.put_nowait(self.hub.snapshot())
         self._hub_listeners.add(on_hub_push)
-        log.debug("[peer] channel open  ← %s", peer_label)
 
         try:
             import aiohttp
@@ -278,7 +368,7 @@ class PeerBridge:
 
             async def pusher() -> None:
                 while True:
-                    item = await queue.get()
+                    item = await push_q.get()
                     if item is None:
                         break
                     try:
@@ -286,18 +376,18 @@ class PeerBridge:
                     except Exception:
                         break
 
+            async def req_loop() -> None:
+                while True:
+                    data = await msg_q.get()
+                    if data is None:
+                        break
+                    asyncio.ensure_future(_proxy_request(data, channel, http, local_url, token))
+
             push_task = asyncio.create_task(pusher())
-
-            @channel.on("message")
-            def on_message(data: str) -> None:
-                asyncio.ensure_future(_proxy_request(data, channel, http, local_url, token))
-
-            @channel.on("close")
-            def on_close() -> None:
-                queue.put_nowait(None)
+            req_task  = asyncio.create_task(req_loop())
 
             try:
-                await push_task
+                await asyncio.gather(push_task, req_task, return_exceptions=True)
             finally:
                 self._hub_listeners.discard(on_hub_push)
                 log.debug("[peer] channel closed ← %s", peer_label)
