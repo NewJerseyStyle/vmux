@@ -1,17 +1,18 @@
 // vmux service worker — installable PWA shell cache.
 // Strategy: network-first so updates always win; fall back to cache when offline.
 // API and websocket traffic is never cached.
+// Paths are relative so the SW works at any base (localhost root or GH Pages sub-path).
 
-const CACHE = "vmux-v13";
+const CACHE = "vmux-v14";
 const SHELL = [
-  "/",
-  "/index.html",
-  "/manifest.webmanifest",
-  "/icon.svg",
-  "/vendor/react.production.min.js",
-  "/vendor/react-dom.production.min.js",
-  "/vendor/htm.umd.js",
-  "/vendor/peerjs.min.js",
+  "./",
+  "./index.html",
+  "./manifest.webmanifest",
+  "./icon.svg",
+  "./vendor/react.production.min.js",
+  "./vendor/react-dom.production.min.js",
+  "./vendor/htm.umd.js",
+  "./vendor/peerjs.min.js",
 ];
 
 self.addEventListener("install", (e) => {
@@ -34,12 +35,12 @@ self.addEventListener("fetch", (e) => {
   e.respondWith(
     fetch(e.request)
       .then((res) => {
-        if (res && res.ok && (url.origin === location.origin || SHELL.includes(e.request.url))) {
+        if (res && res.ok && url.origin === location.origin) {
           const copy = res.clone();
           caches.open(CACHE).then((c) => c.put(e.request, copy));
         }
         return res;
       })
-      .catch(() => caches.match(e.request).then((r) => r || caches.match("/index.html")))
+      .catch(() => caches.match(e.request).then((r) => r || caches.match("./index.html")))
   );
 });

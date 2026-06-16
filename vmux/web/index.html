@@ -9,9 +9,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="vmux" />
-<link rel="manifest" href="/manifest.webmanifest" />
-<link rel="icon" href="/icon.svg" type="image/svg+xml" />
-<link rel="apple-touch-icon" href="/icon.svg" />
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="icon" href="icon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="icon.svg" />
 <title>vmux</title>
 <style>
   :root {
@@ -334,10 +334,10 @@
 <div id="root"></div>
 
 <!-- vendored same-origin (no third-party CDN; removes supply-chain takeover vector) -->
-<script src="/vendor/react.production.min.js"></script>
-<script src="/vendor/react-dom.production.min.js"></script>
-<script src="/vendor/htm.umd.js"></script>
-<script src="/vendor/peerjs.min.js"></script>
+<script src="vendor/react.production.min.js"></script>
+<script src="vendor/react-dom.production.min.js"></script>
+<script src="vendor/htm.umd.js"></script>
+<script src="vendor/peerjs.min.js"></script>
 <script>
 const { useState, useEffect, useRef, useMemo } = React;
 const F = React.Fragment;
@@ -1131,7 +1131,7 @@ function App(){
 ReactDOM.createRoot(document.getElementById("root")).render(html`<${App} />`);
 
 if ("serviceWorker" in navigator) {
-  window.addEventListener("load", ()=>navigator.serviceWorker.register("/sw.js").catch(()=>{}));
+  window.addEventListener("load", ()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));
 }
 </script>
 </body>
