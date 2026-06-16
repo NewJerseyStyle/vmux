@@ -15,7 +15,7 @@ It's the missing control panel for [running 10+ coding agents in parallel](https
 
 ## Install
 
-vmux needs **tmux** and **Python 3.9+**.
+vmux needs **tmux** and **Python 3.10+**.
 
 ```bash
 # from GitHub (works today)
@@ -35,20 +35,39 @@ vmux
 
 Open **http://127.0.0.1:8787**. That's it — vmux auto-discovers every tmux pane, classifies each as `claude-code` / `generic` / `shell`, and shows your agents. No config required. (Idle plain shells are hidden by default; `vmux --include-shells` shows them.)
 
-## Reach it from your phone
+## Reach it from anywhere — no VPN needed
 
-vmux binds `127.0.0.1` on purpose. Two safe ways to your phone:
+vmux includes a built-in **WebRTC peer bridge**. Start it with `--peer-id`:
+
+```bash
+pip install "vmux[peer]"   # adds aiortc + aiohttp
+vmux --peer-id             # prints a friendly ID, e.g.  amber-brook-4729
+```
+
+```
+vmux peer  -> https://vmux.imitationalpha.com/?peer=amber-brook-4729
+```
+
+Open that URL on your phone (or share it to any browser, anywhere). The hosted
+[vmux.imitationalpha.com](https://vmux.imitationalpha.com) page connects back to your local
+server over a direct P2P WebRTC channel — **no VPN, no port forwarding, no account, $0**.
+The peer ID changes each restart; it is not a secret but is only useful while vmux is running.
+
+### Stay on your local network instead
+
+vmux binds `127.0.0.1` on purpose. Two classic alternatives:
 
 - **[Tailscale](https://tailscale.com) (easiest):**
   ```bash
   vmux --host 0.0.0.0 --token "$(openssl rand -hex 16)"
   ```
-  then open `http://<machine-name>.<tailnet>.ts.net:8787/?token=<that-token>` on your phone. If the browser doesn't have the token, vmux shows a paste-token screen.
+  then open `http://<machine-name>.<tailnet>.ts.net:8787/?token=<that-token>` on your phone.
 - **SSH tunnel:** `ssh -L 8787:localhost:8787 you@box`, then open `http://localhost:8787` on the phone.
 
-`--host 0.0.0.0` with an empty token is a hard error, by design — see [SECURITY.md](SECURITY.md). Install it as an app via "Add to Home Screen"; it runs full-screen and notifies you when an agent needs you.
+`--host 0.0.0.0` with an empty token is a hard error, by design — see [SECURITY.md](SECURITY.md).
 
-See [QUICKSTART.md](QUICKSTART.md) for the longer walkthrough.
+Install it as an app via "Add to Home Screen"; it runs full-screen and notifies you when an
+agent needs you. See [QUICKSTART.md](QUICKSTART.md) for the longer walkthrough.
 
 ## What it does
 
@@ -60,11 +79,13 @@ See [QUICKSTART.md](QUICKSTART.md) for the longer walkthrough.
 - **Connected sessions** — see every device connected and disconnect any of them.
 - **Native feel** — a platform-adaptive PWA: macOS sidebar split-view on desktop, iOS bottom-sheet on mobile, Apple "Liquid Glass" styling, light/dark.
 - **Stays on your network** — localhost by default, bearer token for LAN/Tailscale, no cloud, no account, no telemetry.
+- **WebRTC remote access** — `vmux[peer]` optional extra adds a P2P bridge via PeerJS/WebRTC; reach your server from anywhere with a friendly peer ID and no VPN.
 
 ## How it works
 
 - **Backend** — FastAPI + WebSocket. Polls each tmux pane (`tmux capture-pane`) ~every 500 ms, runs detectors, broadcasts state diffs. Sends keystrokes back via `tmux send-keys -l` (literal, shell-safe). User-supplied detector regexes run with a hard timeout, so a bad pattern can't wedge the loop.
 - **Frontend** — a single HTML file with React + htm (vendored, no CDN, no build step), installable as a PWA.
+- **Peer bridge** (`vmux[peer]`) — optional `peer.py` module opens a PeerJS WebSocket to a signaling server, accepts WebRTC offers from remote browsers, and multiplexes REST proxy + state-push over a single DataChannel. The hosted `vmux.imitationalpha.com` PWA is the default remote client.
 - **Config** — none needed (auto-discovery). Optional `config.yaml` and a live Settings UI; UI edits persist to an overlay file so your hand-authored config stays intact.
 
 More detail for contributors: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).

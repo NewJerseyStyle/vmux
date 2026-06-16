@@ -19,6 +19,19 @@ panes:
   #   name: "API refactor"
   #   kind: claude-code         # claude-code | generic | shell
 
+# WebRTC peer bridge — remote access without VPN (requires `pip install "vmux[peer]"`).
+# Start vmux with `--peer-id` (or `--peer-id my-id`) to enable. If unset, the peer
+# bridge is disabled and none of these fields have any effect.
+#
+# peer:
+#   host: peerjs-hcbtcmc2dyecbxa6.centralus-01.azurewebsites.net
+#   port: 443
+#   path: /
+#   key:  peerjs
+#
+# Leave host/port/path/key commented out to use the default free PeerJS server.
+# To self-host: https://github.com/peers/peerjs-server
+
 # Detector tuning for non-Claude agents (regex).
 detectors:
   generic_prompt_patterns:

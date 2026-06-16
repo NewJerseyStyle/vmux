@@ -4,7 +4,7 @@ Thanks for considering a contribution! vmux is intentionally small — "plumbing
 
 ## Dev setup
 
-You'll need **tmux** and **Python 3.9+**. [`uv`](https://docs.astral.sh/uv/) is recommended.
+You'll need **tmux** and **Python 3.10+**. [`uv`](https://docs.astral.sh/uv/) is recommended.
 
 ```bash
 git clone https://github.com/imitation-alpha/vmux
@@ -28,9 +28,10 @@ vmux/
   detectors.py   pure functions: pane text -> status + parsed menu  ← most contributions land here
   models.py      PaneState — the JSON contract shared with the UI
   poller.py      the async poll loop + WebSocket hub + session tracking
+  peer.py        optional WebRTC peer bridge (vmux[peer]): PeerJS signaling + DataChannel proxy
   server.py      FastAPI app: REST + WebSocket + static UI
   web/           single-file React+htm PWA (index.html), vendored libs, service worker
-tests/           pytest (detectors, config, naming, sessions) — all pure, run in CI
+tests/           pytest (detectors, config, naming, sessions, peer) — all pure, run in CI
 ```
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the data flow.
@@ -49,7 +50,7 @@ User-supplied regexes run through the `regex` module with a timeout, so they can
 
 - Small and stdlib-first. Avoid adding dependencies unless they clearly earn it.
 - In `web/index.html`, **`style` props must be objects**, not strings (React requirement — string styles silently blank the app).
-- Run `ruff check` and `pytest` before opening a PR; both run in CI across Python 3.9–3.13.
+- Run `ruff check` and `pytest` before opening a PR; both run in CI across Python 3.10–3.13.
 - **Never commit secrets.** `config.yaml` and `vmux-settings.json` are gitignored — keep your token out of git.
 
 ## Pull requests
